@@ -3,7 +3,7 @@
 namespace LAV.EventBus
 {
 
-    internal class HandlerInfo<TEvent> : HandlerInfo
+    internal class HandlerInfo<TEvent> : HandlerInfo 
     {
         private new Func<TEvent, bool> Filter { get; }
 

@@ -36,7 +36,7 @@ namespace LAV.EventBus
         }
     }
 
-    public class EventBusErrorEventArgs : EventBusErrorEventArgs<object>
+    public sealed class EventBusErrorEventArgs : EventBusErrorEventArgs<object>
     {
         public EventBusErrorEventArgs(Exception exception, object eventData, Delegate handler) : base(exception, eventData, handler)
         {

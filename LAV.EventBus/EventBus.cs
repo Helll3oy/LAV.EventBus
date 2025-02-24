@@ -6,13 +6,25 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 
+#if NETSTANDARD2_0_OR_GREATER
+using System.Threading.Channels;
+#endif
+
 namespace LAV.EventBus
 {
     public sealed class EventBus : IDisposable
     {
+#if NETSTANDARD2_0_OR_GREATER
+        private readonly ConcurrentDictionary<Type, Channel<object>> _eventChannels = new ConcurrentDictionary<Type, Channel<object>>();
         private readonly ConcurrentDictionary<Type, ConcurrentBag<HandlerInfo>> _handlers = new ConcurrentDictionary<Type, ConcurrentBag<HandlerInfo>>();
-        //private readonly object _lock = new object();
+        private readonly int _channelCapacity = 1000; // Adjust as needed
+#else
+        private readonly ConcurrentDictionary<Type, ConcurrentBag<HandlerInfo>> _handlers = new ConcurrentDictionary<Type, ConcurrentBag<HandlerInfo>>();
+
+#endif
+
         private int _handlerOrderCounter;
+
         private bool _disposed;
 
         public event EventHandler<EventBusErrorEventArgs> OnError;
@@ -42,7 +54,7 @@ namespace LAV.EventBus
             bool useWeakReference = false,
             bool isAsync = false)
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(EventBus));
+            if (_disposed) return;//throw new ObjectDisposedException(nameof(EventBus));
 
             if (handler == null)
             {
@@ -55,7 +67,7 @@ namespace LAV.EventBus
                 ? new WeakHandler(handler)
                 : (object)handler;
 
-            var handlerInfo = new HandlerInfo<TEvent>(
+            var handlerInfo = new HandlerInfo(
                 handler: handlerObj,
                 priority: priority,
                 order: _handlerOrderCounter++,
@@ -65,11 +77,127 @@ namespace LAV.EventBus
 
             var handlersBag = _handlers.GetOrAdd(eventType, _ => new ConcurrentBag<HandlerInfo>());
             handlersBag.Add(handlerInfo);
+
+#if NETSTANDARD2_0_OR_GREATER
+            // Ensure a channel exists for this event type
+            _eventChannels.GetOrAdd(eventType, _ => 
+                Channel.CreateBounded<object>(_channelCapacity));
+#endif
         }
+
+#if NETSTANDARD2_0_OR_GREATER
 
         public void Publish<TEvent>(TEvent eventData)
         {
-            PublishInternal(eventData, async: false).ConfigureAwait(false).GetAwaiter().GetResult();
+            if (_disposed) return; //throw new ObjectDisposedException(nameof(EventBus));
+
+            var eventType = typeof(TEvent);
+            if (_eventChannels.TryGetValue(eventType, out var channel))
+            {
+                channel.Writer.TryWrite(eventData);
+            }
+
+        }
+        
+        public async Task PublishAsync<TEvent>(TEvent eventData, CancellationToken cancellationToken = default)
+        {
+            if (_disposed) return; //throw new ObjectDisposedException(nameof(EventBus));
+
+            var eventType = typeof(TEvent);
+            if (_eventChannels.TryGetValue(eventType, out var channel))
+            {
+                await channel.Writer.WriteAsync(eventData, cancellationToken);
+            }
+        }
+
+        public async Task StartProcessingAsync(CancellationToken cancellationToken = default)
+        {
+            var processingTasks = new List<Task>();
+
+            foreach (KeyValuePair<Type, Channel<object>> item/*(eventType, channel)*/ in _eventChannels)
+            {
+                processingTasks.Add(ProcessEventsAsync(item.Key, item.Value.Reader, cancellationToken));
+            }
+
+            await Task.WhenAll(processingTasks);
+        }
+
+        private async Task ProcessEventsAsync(
+            Type eventType,
+            ChannelReader<object> reader,
+            CancellationToken cancellationToken)
+        {
+#if NETSTANDARD2_0 || NET451_OR_GREATER
+            while (await reader.WaitToReadAsync())
+            {
+            //foreach (var eventData in reader.ReadAllAsync(cancellationToken))
+                var eventData = await reader.ReadAsync(cancellationToken);
+#elif NETSTANDARD2_0_OR_GREATER
+            await foreach (var eventData in reader.ReadAllAsync(cancellationToken))
+            {
+#endif
+                var tasks = new List<Task>();
+                //foreach (var type in GetEventTypes(eventType))
+                {
+                    if (!_handlers.TryGetValue(eventType, out var handlers))
+                    {
+                        continue;
+                    }
+
+                    var handlerInfos = handlers
+                        .OrderByDescending(h => h.Priority)
+                        .ThenBy(h => h.Order)
+                        .ToList();
+                    
+                    foreach (var handlerInfo in handlerInfos)
+                    {
+                        try
+                        {
+                            //ProcessHandler(handlerInfo, Convert.ChangeType(eventData, eventType), true, tasks);
+
+                            // Handle filtering
+                            if (handlerInfo.Filter is Func<object, bool> filter && !filter(eventData))
+                            {
+                                continue;
+                            }
+
+                            // Get actual delegate
+                            Delegate handlerDelegate = handlerInfo.IsWeakReference
+                                ? ((WeakHandler)handlerInfo.Handler).CreateDelegate()
+                                : (Delegate)handlerInfo.Handler;
+
+                            if (handlerDelegate == null) continue;
+
+                            // tasks.Add(handlerInfo.IsAsync
+                            //     ? ((Func<object, Task>)handlerDelegate)(eventData) //handlerDelegate.DynamicInvoke(eventData) //
+                            //     : Task.Run(() => 
+                            //         //((Action<object>)handlerDelegate)(Convert.ChangeType(eventData, eventType))
+                            //         handlerDelegate.DynamicInvoke(eventData)
+                            //         )
+                            //     );
+
+                            tasks.Add(Task.Run(() => handlerDelegate.DynamicInvoke(eventData)));
+                        }
+                        catch (Exception ex)
+                        {
+                            HandleError(ex, eventData, handlerInfo);
+                        }
+                    }
+                }
+                if (tasks.Count > 0)
+                {
+                    await Task.WhenAll(tasks).ConfigureAwait(false);
+                }
+            }
+        }
+#else
+        public void Publish<TEvent>(TEvent eventData)
+        {
+            if (_disposed) return; //throw new ObjectDisposedException(nameof(EventBus));
+
+            PublishInternal(eventData, async: false).ConfigureAwait(false)
+                .GetAwaiter()
+                .GetResult();
         }
 
         public Task PublishAsync<TEvent>(TEvent eventData)
@@ -140,8 +268,9 @@ namespace LAV.EventBus
                 await Task.WhenAll(tasks).ConfigureAwait(false);
             }
         }
+#endif
 
-        private void ProcessHandler<TEvent>(HandlerInfo handlerInfo, TEvent eventData, bool async, List<Task> tasks)
+        private void ProcessHandler<TEvent>(HandlerInfo handlerInfo, TEvent eventData, bool async, IList<Task> tasks)
         {
             // Handle filtering
             if (handlerInfo.Filter is Func<TEvent, bool> filter && !filter(eventData))
@@ -207,8 +336,17 @@ namespace LAV.EventBus
 
         public void Dispose()
         {
-            _handlers.Clear();
             _disposed = true;
+
+#if NETSTANDARD2_0_OR_GREATER
+            foreach (var channel in _eventChannels.Values)
+            {
+                channel.Writer.Complete();
+            }
+            _eventChannels.Clear();
+#endif
+
+            _handlers.Clear();
         }
     }
 }

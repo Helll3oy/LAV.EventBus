@@ -1,5 +1,7 @@
-﻿using System.Linq.Expressions;
+﻿using System;
+using System.Linq.Expressions;
 using System.Reflection;
+using System.Threading.Tasks;
 using LAV.EventBus;
 
 // var s = new WeakSubscriber();
@@ -63,133 +65,200 @@ using LAV.EventBus;
 // eventBus.Dispose(); // Stop processing
 // await processingTask;
 
-using var fastEventBus = new FastEventBus();
-
-fastEventBus.OnError += (sender, args) =>
-    Console.WriteLine($"Error: {args.Exception.Message}");
-
-fastEventBus.OnLog += (sender, args) =>
-    Console.WriteLine($"Log: {args.Message}");
-
-fastEventBus.OnSubscribe += (sender, args) =>
-    Console.WriteLine($"Subscribe to [{args?.DelegateInfo?.EventType?.FullName}]" +
-        $"{((args?.DelegateInfo?.HasFilter ?? false) ? $" with filter [{args?.DelegateInfo?.FilterSourceCode}]" : "")}.");
-
-_ = fastEventBus.SubscribeAsync<UserCreatedEvent>((userCreatedEvent, _) =>
+internal class Program
 {
-    Console.WriteLine($"User created: {userCreatedEvent.UserName}");
-    return Task.CompletedTask;
-});
+    private static async Task Main(string[] args)
+    {
+        DateTimeOffset start = DateTimeOffset.UtcNow;
 
-// // Subscribe to OrderPlacedEvent
-// _ = fastEventBus.SubscribeAsync<OrderPlacedEvent>((orderPlacedEvent, _) =>
-// {
-//     Console.WriteLine($"Order placed #1: {orderPlacedEvent.OrderId}");
-//     return Task.CompletedTask;
-// });
+        using (var fastEventBus = new FastEventBus())
+        {
 
-// _ = fastEventBus.SubscribeAsync<OrderPlacedEvent>((orderPlacedEvent, _) =>
-// {
-//     Console.WriteLine($"Order placed #2: {orderPlacedEvent.OrderId}");
-//     return Task.CompletedTask;
-// });
+            fastEventBus.OnError += (sender, a) =>
+                Console.WriteLine($"Error: {a.Exception.Message}");
 
-// _= fastEventBus.SubscribeAsync<SampleEvent>(
-//     async (e , _) =>
-//     {
-//         await Task.Delay(100);
-//         Console.WriteLine($"SampleEvent received #1: {e.Message}, Severity: {e.Severity}");
-//         await Task.CompletedTask;
-//     });
+            fastEventBus.OnLog += (sender, a) =>
+                Console.WriteLine($"Log: {a.Message}");
 
-// _= fastEventBus.SubscribeAsync<SampleEvent>(
-//     async (e , _) =>
-//     {
-//         await Task.Delay(10);
-//         Console.WriteLine($"SampleEvent received #2: {e.Message}, Severity: {e.Severity}");
-//         await Task.CompletedTask;
-//     },
-//     (e) => e.Severity < 3);
+            fastEventBus.OnSubscribe += (sender, a) =>
+                Console.WriteLine($"Subscribe to [{a?.DelegateInfo?.EventType?.FullName}]" +
+                    $"{(a?.DelegateInfo?.HasFilter ?? false ? $" with filter [{a?.DelegateInfo?.FilterSourceCode}]" : "")}.");
 
-// _= fastEventBus.SubscribeAsync<SampleEvent>(
-//     (e) =>
-//     {
-//         Console.WriteLine($"SampleEvent received #3: {e.Message}, Severity: {e.Severity}");
-//     },
-//     (e) => e.Severity > 2);
+            _ = fastEventBus.SubscribeAsync<UserCreatedEvent>(async (userCreatedEvent, _) =>
+            {
+                Console.WriteLine($"User created: {userCreatedEvent.UserName}");
+                //await Task.CompletedTask;
+            });
 
-// _= fastEventBus.SubscribeAsync<SampleEvent>(SampleEventHandle, e => e.Severity == 1);
-// _= fastEventBus.SubscribeAsync<SampleEvent>(SampleEventAsyncHandle, e => e.Severity == 2);
+            // Subscribe to OrderPlacedEvent
+            _ = fastEventBus.SubscribeAsync<OrderPlacedEvent>((orderPlacedEvent) =>
+            {
+                Console.WriteLine($"Order placed #1: {orderPlacedEvent.OrderId}");
+            });
 
-// async Task SampleEventAsyncHandle(SampleEvent e, CancellationToken cancellationToken = default)
-// {
-//     Console.WriteLine($"SampleEvent received #5: {e.Message}, Severity: {e.Severity}");
-//     await Task.CompletedTask;
-// }
+            // Weak reference subscription with filter
+            var weakSubscriber = new WeakSubscriber();
+            _ = fastEventBus.SubscribeAsync<SampleEvent>(
+                weakSubscriber.HandleEvent);
 
-// void SampleEventHandle(SampleEvent e)
-// {
-//     Console.WriteLine($"SampleEvent received #4: {e.Message}, Severity: {e.Severity}");
-// }
+            // _ = fastEventBus.SubscribeAsync<OrderPlacedEvent>((orderPlacedEvent, _) =>
+            // {
+            //     Console.WriteLine($"Order placed #2: {orderPlacedEvent.OrderId}");
+            //     return Task.CompletedTask;
+            // });
 
-// Start processing events
-var processingTask = fastEventBus.StartProcessingAsync();
+            // _= fastEventBus.SubscribeAsync<SampleEvent>(
+            //     async (e , _) =>
+            //     {
+            //         await Task.Delay(100);
+            //         Console.WriteLine($"SampleEvent received #1: {e.Message}, Severity: {e.Severity}");
+            //         await Task.CompletedTask;
+            //     });
 
-// Give some time for the events to be processed
-await Task.Delay(100);
+            // _= fastEventBus.SubscribeAsync<SampleEvent>(
+            //     async (e , _) =>
+            //     {
+            //         await Task.Delay(10);
+            //         Console.WriteLine($"SampleEvent received #2: {e.Message}, Severity: {e.Severity}");
+            //         await Task.CompletedTask;
+            //     },
+            //     (e) => e.Severity < 3);
 
-// Publish some events
-await fastEventBus.PublishAsync(new UserCreatedEvent { UserName = "JohnDoe" });
-// await fastEventBus.PublishAsync(new OrderPlacedEvent { OrderId = 123 });
-// await fastEventBus.PublishAsync(new SampleEvent { Message = "1. First publish", Severity = 1 });
+            // _= fastEventBus.SubscribeAsync<SampleEvent>(
+            //     (e) =>
+            //     {
+            //         Console.WriteLine($"SampleEvent received #3: {e.Message}, Severity: {e.Severity}");
+            //     },
+            //     (e) => e.Severity > 2);
 
-// await Task.Delay(100);
+            _ = fastEventBus.SubscribeAsync<SampleEvent>(SampleEventHandle, e => e.Severity == 1);
+            // _= fastEventBus.SubscribeAsync<SampleEvent>(SampleEventAsyncHandle, e => e.Severity == 2);
 
-// await fastEventBus.PublishAsync(new OrderPlacedEvent { OrderId = 456 });
-// await fastEventBus.PublishAsync(new UserCreatedEvent { UserName = "Mr. Smith" });
+            _ = fastEventBus.SubscribeAsync<SampleEvent>(WeakSubscriber.StaticHandleEvent, e => e.Severity == 1);
 
-// await Task.Delay(100);
+            // async Task SampleEventAsyncHandle(SampleEvent e, CancellationToken cancellationToken = default)
+            // {
+            //     Console.WriteLine($"SampleEvent received #5: {e.Message}, Severity: {e.Severity}");
+            //     await Task.CompletedTask;
+            // }
 
-// await fastEventBus.PublishAsync(new SampleEvent { Message = "2. Second publish", Severity = 2 });
-// await fastEventBus.PublishAsync(new SampleEvent { Message = "3. Third publish", Severity = 3 });
+            void SampleEventHandle(SampleEvent e)
+            {
+                Console.WriteLine($"SampleEvent received #4: {e.Message}, Severity: {e.Severity}");
+            }
 
-await Task.Delay(100);
+            // Start processing events
+            var processingTask = fastEventBus.StartProcessingAsync();
 
-// _ = fastEventBus.SubscribeAsync<OrderPlacedEvent>((orderPlacedEvent, _) =>
-// {
-//     Console.WriteLine($"Order placed #3: {orderPlacedEvent.OrderId}");
-//     return Task.CompletedTask;
-// });
+            // Give some time for the events to be processed
+            await Task.Delay(100);
 
-await fastEventBus.PublishAsync(new OrderPlacedEvent { OrderId = 789 });
+            // Publish some events
+            await fastEventBus.PublishAsync(new UserCreatedEvent { UserName = "JohnDoe" });
+            // await fastEventBus.PublishAsync(new OrderPlacedEvent { OrderId = 123 });
+            await fastEventBus.PublishAsync(new SampleEvent { Message = "1. First publish", Severity = 1 });
 
-// Give some time for the events to be processed
-await Task.Delay(1000);
+            // await Task.Delay(100);
 
-// Stop processing
-fastEventBus.Dispose(); 
-// await fastEventBus.UnsubscribeAsync<SampleEvent>();
-// await fastEventBus.UnsubscribeAsync<OrderPlacedEvent>();
-// await fastEventBus.UnsubscribeAsync<UserCreatedEvent>();
-await processingTask;
+            // await fastEventBus.PublishAsync(new OrderPlacedEvent { OrderId = 456 });
+            // await fastEventBus.PublishAsync(new UserCreatedEvent { UserName = "Mr. Smith" });
+
+            await Task.Delay(100);
+
+            await fastEventBus.PublishAsync(new SampleEvent { Message = "2. Second publish", Severity = 2 });
+
+            await Task.Delay(100);
+
+            weakSubscriber.Dispose();
+
+            weakSubscriber = null;
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+
+            await Task.Delay(1000);
+
+            await fastEventBus.PublishAsync(new SampleEvent { Message = "3. Third publish", Severity = 3 });
+
+            await Task.Delay(100);
+
+            // _ = fastEventBus.SubscribeAsync<OrderPlacedEvent>((orderPlacedEvent, _) =>
+            // {
+            //     Console.WriteLine($"Order placed #3: {orderPlacedEvent.OrderId}");
+            //     return Task.CompletedTask;
+            // });
+
+            await fastEventBus.PublishAsync(new OrderPlacedEvent { OrderId = 789 });
+
+            // Give some time for the events to be processed
+            await Task.Delay(1000);
+
+            // Stop processing
+            fastEventBus.Dispose();
+            // await fastEventBus.UnsubscribeAsync<SampleEvent>();
+            // await fastEventBus.UnsubscribeAsync<OrderPlacedEvent>();
+            // await fastEventBus.UnsubscribeAsync<UserCreatedEvent>();
+
+            await processingTask;
+        }
+
+        Console.WriteLine($"Done [{(DateTimeOffset.UtcNow - start).TotalMilliseconds - 2400} мс]!");
+        Console.ReadLine();
+    }
+}
 
 public class SampleEvent : Event
 {
-    public required string Message { get; set; }
+    public string Message { get; set; }
     public int Severity { get; set; }
 }
 
-class WeakSubscriber
+class WeakSubscriber : IDisposable
 {
+    private bool disposedValue;
+
+    public static void StaticHandleEvent(SampleEvent e)
+    {
+        Console.WriteLine($"Weak static handler received #2: {e.Message}, Severity: {e.Severity}");
+    }
+
     public void HandleEvent(SampleEvent e)
     {
-        Console.WriteLine($"Weak handler received: {e.Message}, Severity: {e.Severity}");
+        Console.WriteLine($"Weak handler received #1 (disposedValue[{disposedValue}]): {e.Message}, Severity: {e.Severity}");
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!disposedValue)
+        {
+            if (disposing)
+            {
+                // TODO: освободить управляемое состояние (управляемые объекты)
+            }
+
+            // TODO: освободить неуправляемые ресурсы (неуправляемые объекты) и переопределить метод завершения
+            // TODO: установить значение NULL для больших полей
+            disposedValue = true;
+        }
+    }
+
+    // TODO: переопределить метод завершения, только если "Dispose(bool disposing)" содержит код для освобождения неуправляемых ресурсов
+    ~WeakSubscriber()
+    {
+        // Не изменяйте этот код. Разместите код очистки в методе "Dispose(bool disposing)".
+        Dispose(disposing: false);
+    }
+
+    public void Dispose()
+    {
+        // Не изменяйте этот код. Разместите код очистки в методе "Dispose(bool disposing)".
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
     }
 }
 
 public class UserCreatedEvent : Event
 {
-    public required string UserName { get; set; }
+    public string UserName { get; set; }
 }
 
 public class OrderPlacedEvent : Event

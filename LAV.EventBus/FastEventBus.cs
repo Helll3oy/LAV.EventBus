@@ -148,7 +148,7 @@ namespace LAV.EventBus
             }
             finally
             {
-                _semaphoreSlim.Release(1);
+                _semaphoreSlim?.Release(1);
             }
 
             return removed;
@@ -156,59 +156,56 @@ namespace LAV.EventBus
 
         public async Task SubscribeAsync<TEvent>(
             Action<TEvent> handler,
-            Expression<Func<TEvent, bool>> filter,
+            Expression<Func<TEvent, bool>> filter = null,
             CancellationToken cancellationToken = default)
             where TEvent : Event
         {
-            var delegateInfo = new DelegateInfo<TEvent>(filter);
-            await SubscribeAsync(handler, delegateInfo, cancellationToken);
+            var delegateInfo = new DelegateInfo<TEvent>(handler, filter);
+
+            await SubscribeInternalAsync(handler, delegateInfo, cancellationToken);
         }
 
         public async Task SubscribeAsync<TEvent>(
             Func<TEvent, CancellationToken, Task> handler,
-            Expression<Func<TEvent, bool>> filter,
+            Expression<Func<TEvent, bool>> filter = null,
             CancellationToken cancellationToken = default)
             where TEvent : Event
         {
-            var delegateInfo = new DelegateInfo<TEvent>(filter);
-            await SubscribeAsync(handler, delegateInfo, cancellationToken);
+            var delegateInfo = new DelegateInfo<TEvent>(handler, filter);
+            await SubscribeInternalAsync(handler, delegateInfo, cancellationToken);
         }
 
-        public async Task SubscribeAsync<TEvent>(
-            Action<TEvent> handler,
-            DelegateInfo<TEvent> delegateInfo = null,
-            CancellationToken cancellationToken = default)
-            where TEvent : Event
-        {
-            await SubscribeAsync((ev, _) => Task.Run(() => handler(ev), cancellationToken), delegateInfo, cancellationToken);
-        }
+        //private async Task SubscribeAsync<TEvent>(
+        //    Action<TEvent> handler,
+        //    DelegateInfo<TEvent> delegateInfo = null,
+        //    CancellationToken cancellationToken = default)
+        //    where TEvent : Event
+        //{
+        //    await SubscribeAsync((ev, token) => Task.Run(() => handler(ev), token), delegateInfo, cancellationToken);
+        //}
 
-        public async Task SubscribeAsync<TEvent>(
-            Func<TEvent, CancellationToken, Task> handler,
+        private async Task SubscribeInternalAsync<TEvent>(
+            //Func<TEvent, CancellationToken, Task> handler,
+            Delegate handler,
             DelegateInfo<TEvent> delegateInfo = null,
             CancellationToken cancellationToken = default)
             where TEvent : Event
         {
             await _semaphoreSlim.WaitAsync(cancellationToken);
 
-            Type type = typeof(TEvent);
             try
             {
-                if (!_eventItems.TryGetValue(type, out var eventItem))
-                {
-                    eventItem = new EventItem();
-                    if (!_eventItems.TryAdd(type, eventItem))
-                    {
-                        throw new ArgumentException(nameof(type));
-                    }
-                }
+                var eventItem = GetOrAddEventItem<TEvent>();
 
-                if(delegateInfo == null) delegateInfo = DelegateInfo<TEvent>.Default;
+                delegateInfo ??= DelegateInfo<TEvent>.Default;
 
                 if (await eventItem.AddHandlerAsync(handler, delegateInfo, cancellationToken))
+                {
                     RaiseSubscribeEvent(handler, delegateInfo);
+                }
 
                 if (!eventItem.ProcessStarted) _tasks.Add(eventItem.ListenAsync<TEvent>(cancellationToken));
+
             }
             catch (Exception ex)
             {
@@ -216,8 +213,25 @@ namespace LAV.EventBus
             }
             finally
             {
-                _semaphoreSlim.Release(1);
+                _semaphoreSlim?.Release(1);
             }
+        }
+
+        private EventItem GetOrAddEventItem<TEvent>()
+            where TEvent : Event
+        {
+            Type type = typeof(TEvent);
+
+            if (!_eventItems.TryGetValue(type, out var eventItem))
+            {
+                eventItem = new EventItem();
+                if (!_eventItems.TryAdd(type, eventItem))
+                {
+                    throw new ArgumentException(nameof(type));
+                }
+            }
+
+            return eventItem;
         }
 
         public async Task<bool> StartProcessingAsync(CancellationToken cancellationToken = default)
@@ -228,8 +242,8 @@ namespace LAV.EventBus
             {
                 if (_tasks.IsEmpty) return false;
 
-                await Task.WhenAll(_tasks.ToArray()).ConfigureAwait(false);
-
+                await Task.WhenAll(_tasks.AsEnumerable()).ConfigureAwait(false);
+                
                 return true;
             }
             catch (Exception ex)
@@ -239,7 +253,8 @@ namespace LAV.EventBus
             }
             finally
             {
-                _processSemaphore.Release();
+                if(!disposedValue)
+                    _processSemaphore?.Release();
             }
         }
 
@@ -255,12 +270,19 @@ namespace LAV.EventBus
         {
             if (_eventItems.IsEmpty) return;
 
-            Parallel.ForEach(_eventItems, eventItem =>
+            //Parallel.ForEach(_eventItems, eventItem =>
+            //{
+            //    eventItem.Value.Reset(!dispose);
+
+            //    if (dispose) eventItem.Value.Dispose();
+            //});
+
+            foreach (var eventItem in _eventItems)
             {
                 eventItem.Value.Reset(!dispose);
 
                 if (dispose) eventItem.Value.Dispose();
-            });
+            }
 
             _eventItems.Clear();
         }
@@ -282,9 +304,10 @@ namespace LAV.EventBus
 
             // TODO: free unmanaged resources (unmanaged objects) and override finalizer
             // TODO: set large fields to null
+            disposedValue = true;
+
             _eventItems = null;
             _tasks = null;
-            disposedValue = true;
         }
 
         // TODO: override finalizer only if 'Dispose(bool disposing)' has code to free unmanaged resources

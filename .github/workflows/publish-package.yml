@@ -1,18 +1,47 @@
 ﻿name: Publish package
 run-name: ${{ github.actor }} is publish package 🚀
-on: [push]
+on:
+  push:
+    branches: [main]
 jobs:
-  Explore-GitHub-Actions:
+  generate-version:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
     steps:
-      - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
-      - run: echo "🐧 This job is now running on a ${{ runner.os }} server hosted by GitHub!"
-      - run: echo "🔎 The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
-      - name: Check out repository code
-        uses: actions/checkout@v4
-      - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
-      - run: echo "🖥️ The workflow is now ready to test your code on the runner."
-      - name: List files in the repository
+      - uses: actions/checkout@v2
+
+      - name: GitHub Tag Bump
+        id: tab_bump
+        uses: anothrNick/github-tag-action@1.71.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INITIAL_VERSION: 1.0.0
+          DEFAULT_BUMP: patch
+
+    outputs:
+      new_version: ${{ steps.tab_bump.outputs.new_tag }}
+
+  package-and-publish-lib:
+    runs-on: ubuntu-latest
+    needs: generate-version
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Generate NuGet package
         run: |
-          ls ${{ github.workspace }}
-      - run: echo "🍏 This job's status is ${{ job.status }}."
+          dotnet pack LAV.EventBus/ \
+          --configuration Release \
+          -p:PackageVersion=${{ needs.generate-version.outputs.new_version }} \
+          -p:RepositoryUrl=https://github.com/HHelll3oy/LAV.EventBus \
+          -o packages
+
+      - name: Publish NuGet package
+        run: dotnet nuget push packages/*.nupkg --api-key ${{ secrets.PUSH_NUGET }} --source https://nuget.pkg.github.com/HHelll3oy/index.json

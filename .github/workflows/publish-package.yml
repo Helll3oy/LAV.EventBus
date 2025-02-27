@@ -40,7 +40,7 @@ jobs:
           dotnet pack LAV.EventBus/ \
           --configuration Release \
           -p:PackageVersion=${{ needs.generate-version.outputs.new_version }} \
-          -p:RepositoryUrl=https://github.com/HHelll3oy/LAV.EventBus \
+          -p:RepositoryUrl=https://github.com/Helll3oy/LAV.EventBus \
           -o packages
 
       - name: Publish NuGet package

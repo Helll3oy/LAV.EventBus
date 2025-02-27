@@ -44,4 +44,4 @@ jobs:
           -o packages
 
       - name: Publish NuGet package
-        run: dotnet nuget push packages/*.nupkg --api-key ${{ secrets.PUSH_NUGET }} --source https://nuget.pkg.github.com/HHelll3oy/index.json
+        run: dotnet nuget push packages/*.nupkg --api-key ${{ secrets.PUSH_NUGET }} --source https://nuget.pkg.github.com/Helll3oy/index.json

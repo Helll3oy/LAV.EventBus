@@ -1,22 +1,29 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Runtime.CompilerServices;
+
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 
-// #if NETSTANDARD2_0_OR_GREATER
-// using System.Threading.Channels;
-// #endif
+#if NETSTANDARD2_0_OR_GREATER
+using System.Threading.Channels;
+#endif
 
 namespace LAV.EventBus
 {
     public sealed class EventItem : IDisposable
     {
         private bool disposedValue;
-        private readonly SemaphoreSlim _semaphoreSlim = new SemaphoreSlim(1, 1);
+        private SemaphoreSlim _semaphoreSlim = new SemaphoreSlim(1, 1);
 
 #if NETSTANDARD2_0_OR_GREATER
-        private System.Threading.Channels.Channel<object> _channel { get; set; } 
+        private System.Threading.Channels.Channel<object> _channel
             = System.Threading.Channels.Channel.CreateUnbounded<object>();
+#else
+        //private AsyncEnumerator<object> _enumerator = new AsyncEnumerator<object>(); 
+        private CustomChannel<object> _channel = new CustomChannel<object>(); 
 #endif
 
         private ConcurrentDictionary<Delegate, DelegateInfo> _handlers
@@ -24,17 +31,30 @@ namespace LAV.EventBus
 
         public bool ProcessStarted { get; private set; }
 
+        private ConcurrentDictionary<DelegateInfo, byte> _weakDelegateInfos = new ConcurrentDictionary<DelegateInfo, byte>();
+
         public bool AddHandler<TDelegateInfo>(Delegate handler, TDelegateInfo delegateInfo)
             where TDelegateInfo : DelegateInfo
         {
             if(disposedValue) return false;
 
+            if (delegateInfo == null) throw new ArgumentNullException(nameof(delegateInfo));
+
             _semaphoreSlim.Wait();
             try
             {
-                if (_handlers.ContainsKey(handler)) return false;
-                
-                if (_handlers.TryAdd(handler, delegateInfo ?? DelegateInfo.Default)) return true;
+                if (delegateInfo.IsWeakReference)
+                {
+                    _weakDelegateInfos.TryAdd(delegateInfo, 1);
+
+                    return true;
+                }
+                else
+                {
+                    if (_handlers.ContainsKey(handler)) return false;
+
+                    if (_handlers.TryAdd(handler, delegateInfo)) return true;
+                }
 
                 throw new ArgumentException(nameof(handler));
             }
@@ -49,12 +69,23 @@ namespace LAV.EventBus
         {
             if(disposedValue) return false;
 
+            if (delegateInfo == null) throw new ArgumentNullException(nameof(delegateInfo));
+
             await _semaphoreSlim.WaitAsync(cancellationToken);
             try
             {
-                if (_handlers.ContainsKey(handler)) return false;
-                
-                if (_handlers.TryAdd(handler, delegateInfo ?? DelegateInfo.Default)) return true;
+                if (delegateInfo.IsWeakReference)
+                {
+                    _weakDelegateInfos.TryAdd(delegateInfo, 1);
+
+                    return true;
+                }
+                else
+                {
+                    if (_handlers.ContainsKey(handler)) return false;
+
+                    if (_handlers.TryAdd(handler, delegateInfo)) return true;
+                }
 
                 throw new ArgumentException(nameof(handler));
             }
@@ -72,7 +103,8 @@ namespace LAV.EventBus
 #if NETSTANDARD2_0_OR_GREATER
             _channel.Writer.TryWrite(eventToPublish);
 #else
-            throw new NotImplementedException();
+            //_enumerator.AddItem(eventToPublish);
+            Task.WaitAll(_channel.Writer.WriteAsync(eventToPublish));
 #endif
         }
 
@@ -87,7 +119,8 @@ namespace LAV.EventBus
                 
             await _channel.Writer.WriteAsync(eventToPublish, cancellationToken);
 #else
-            await Task.FromResult(new NotImplementedException());
+            //await _enumerator.AddItemAsync(eventToPublish);
+            await _channel.Writer.WriteAsync(eventToPublish, cancellationToken);
 #endif
         }
 
@@ -97,32 +130,84 @@ namespace LAV.EventBus
             if(ProcessStarted || disposedValue) return;
 
             ProcessStarted = true;
-            
+
 #if NETSTANDARD2_0_OR_GREATER
-            var reader = _channel.Reader;
-
-            while (await reader.WaitToReadAsync(cancellationToken))
+            await foreach (TEvent @event in _channel.Reader.ReadAllAsync(cancellationToken))
             {
-                var eventToHandle = await reader.ReadAsync(cancellationToken);
+                if (_handlers == null) continue;
 
-                if (_handlers == null || !(eventToHandle is TEvent @event))
-                    continue;
-
-                var iterator = _handlers.GetEnumerator();
-                while (iterator.MoveNext())
-                {
-                    var eventHandler = (Func<TEvent, CancellationToken, Task>)iterator.Current.Key;
-                    var eventHandlerInfo = iterator.Current.Value;
-
-                    if(!eventHandlerInfo.ApplyFilter(@event)) continue;
-
-                    await eventHandler(@event, cancellationToken).ConfigureAwait(false);
-                }
+                ProcessEventHandlers<TEvent>(@event, cancellationToken);
             }
 #else
-            await Task.FromResult(new NotImplementedException());
+            while (!(disposedValue || await _channel?.Reader.IsCompletedAsync(cancellationToken)))
+            {
+                try
+                {
+                    var eventToHandle = await _channel?.Reader.ReadAsync(cancellationToken);
+
+                    if (_handlers == null || eventToHandle is not TEvent @event)
+                        continue;
+
+                    ProcessEventHandlers<TEvent>(@event, cancellationToken);
+                }
+                catch (InvalidOperationException e)
+                {
+                    break;
+                }
+            }
 #endif
+            
             ProcessStarted = false;
+        
+        }
+
+        private void ProcessEventHandlers<TEvent>(TEvent @event, CancellationToken cancellationToken) where TEvent : Event
+        {
+            var iterator = _handlers.GetEnumerator();
+            while (iterator.MoveNext())
+            {
+                var eventHandlerInfo = iterator.Current.Value;
+
+                if (eventHandlerInfo.HasFilter && !eventHandlerInfo.ApplyFilter(@event)) continue;
+
+                var eventHandler = iterator.Current.Key;
+                InvokeEventHandler<TEvent>(@event, eventHandler, cancellationToken);
+            }
+
+            if (!_weakDelegateInfos.IsEmpty)
+            {
+                foreach (var weakDelegateInfo in _weakDelegateInfos.Keys)
+                {
+                    if (weakDelegateInfo.IsWeakAlive)
+                    {
+                        if (weakDelegateInfo.HasFilter && !weakDelegateInfo.ApplyFilter(@event)) continue;
+
+                        var eventHandler = weakDelegateInfo.CreateDelegate();
+
+                        InvokeEventHandler<TEvent>(@event, eventHandler, cancellationToken);
+                    }
+                    else
+                    {
+                        _weakDelegateInfos.TryRemove(weakDelegateInfo, out var _);
+                    }
+                }
+            }
+        }
+
+        private static void InvokeEventHandler<TEvent>(TEvent @event, Delegate eventHandler, CancellationToken cancellationToken) where TEvent : Event
+        {
+            if (eventHandler is Func<TEvent, CancellationToken, Task> asyncEventHandler)
+            {
+                _ = asyncEventHandler(@event, cancellationToken).ConfigureAwait(false);
+            }
+            else if (eventHandler is Action<TEvent> actionEventHandler)
+            {
+                _ = Task.Run(() => actionEventHandler(@event), cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                throw new NotSupportedException(nameof(eventHandler));
+            }
         }
 
         public void Reset(bool reopen = true)
@@ -133,8 +218,14 @@ namespace LAV.EventBus
             try
             {
 #if NETSTANDARD2_0_OR_GREATER
+                _channel?.Writer.TryComplete();
+#else
                 _channel?.Writer.Complete();
 #endif
+                if(!reopen && _handlers != null && !_handlers.IsEmpty)
+                {
+                    _handlers.Clear();
+                }
             }
 #if NETSTANDARD2_0_OR_GREATER
             catch(System.Threading.Channels.ChannelClosedException)
@@ -146,8 +237,10 @@ namespace LAV.EventBus
             {
 #if NETSTANDARD2_0_OR_GREATER
                 if(reopen) _channel = System.Threading.Channels.Channel.CreateUnbounded<object>();
+#else
+                if (reopen) _channel?.Reset();
 #endif
-                _semaphoreSlim.Release(1);
+                _semaphoreSlim.Release();
             }
         }
 
@@ -160,16 +253,16 @@ namespace LAV.EventBus
                 // Dispose managed state (managed objects)
                 Reset(false);
                 _handlers.Clear();
+                _semaphoreSlim.Dispose();
             }
 
             // Free unmanaged resources (unmanaged objects) and override finalizer
             // Set large fields to null
-#if NETSTANDARD2_0_OR_GREATER
-            _channel = null;
-#endif
-            _handlers = null;
-
             disposedValue = true;
+
+            _channel = null;
+            _handlers = null;
+            _semaphoreSlim = null;
         }
 
         public void Dispose()

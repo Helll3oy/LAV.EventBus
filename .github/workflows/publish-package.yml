@@ -43,5 +43,8 @@ jobs:
           -p:RepositoryUrl=https://github.com/Helll3oy/LAV.EventBus \
           -o packages
 
-      - name: Publish NuGet package
+      - name: Publish NuGet package into https://nuget.pkg.github.com/Helll3oy
         run: dotnet nuget push packages/*.nupkg --api-key ${{ secrets.PUSH_NUGET }} --source https://nuget.pkg.github.com/Helll3oy/index.json
+        
+      - name: Publish NuGet package https://api.nuget.org/v3/
+        run: dotnet nuget push packages/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json

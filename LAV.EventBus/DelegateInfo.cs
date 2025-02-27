@@ -9,16 +9,16 @@ namespace LAV.EventBus
     /// <summary>
     /// Represents an abstract base class for delegate information.
     /// </summary>
-    public class DelegateInfo
+    public abstract class DelegateInfo
     {
-        private static readonly Lazy<DelegateInfo> _default =
-            new Lazy<DelegateInfo>(() => new DelegateInfo());
+        //private static readonly Lazy<DelegateInfo> _default =
+        //    new Lazy<DelegateInfo>(() => new DelegateInfo());
 
         private readonly WeakReference _weakReference;
         private readonly MethodInfo _methodInfo;
         private readonly Type _delegateType;
 
-        public static DelegateInfo Default => _default.Value;
+        //public static DelegateInfo Default => _default.Value;
 
         public virtual string FilterSourceCode { get; }
         public virtual bool HasFilter { get; }
@@ -39,7 +39,7 @@ namespace LAV.EventBus
         /// <returns>True if the event passes the filter; otherwise, false.</returns>
         public virtual bool ApplyFilter(Event @event) => true;
 
-        public DelegateInfo(Delegate handler = null, string filterSourceCode = null)
+        protected DelegateInfo(Delegate handler = null, string filterSourceCode = null)
         {
             if(handler != null)
             {

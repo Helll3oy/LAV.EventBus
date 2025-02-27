@@ -95,7 +95,7 @@ internal class Program
             // Subscribe to OrderPlacedEvent
             _ = fastEventBus.SubscribeAsync<OrderPlacedEvent>((orderPlacedEvent) =>
             {
-                Console.WriteLine($"{Interlocked.Increment(ref cnt)}Order placed #1: {orderPlacedEvent.OrderId}");
+                //Console.WriteLine($"{Interlocked.Increment(ref cnt)}Order placed #1: {orderPlacedEvent.OrderId}");
             });
 
             // Weak reference subscription with filter
@@ -189,7 +189,7 @@ internal class Program
             //     return Task.CompletedTask;
             // });
 
-            for (int i = 0; i < 1000; i++)
+            for (int i = 0; i < 1000000; i++)
             {
                 fastEventBus.PublishAsync(new OrderPlacedEvent { OrderId = 789 });
             }

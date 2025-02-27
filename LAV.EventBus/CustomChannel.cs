@@ -29,6 +29,16 @@ namespace LAV.EventBus
             Writer = new ChannelWriter<T>(this);
         }
 
+        public async Task<bool> WaitToWriteAsync(CancellationToken cancellationToken = default)
+        {
+            if (disposedValue)
+                throw new ObjectDisposedException(nameof(CustomChannel<T>));
+
+            await _spaceAvailable.WaitAsync(cancellationToken); // Wait for space to be available
+
+            return true;
+        }
+
         public async Task WriteAsync(T item, CancellationToken cancellationToken = default)
         {
             if (disposedValue)
@@ -53,8 +63,8 @@ namespace LAV.EventBus
                 return item;
             }
 
-            return default;
-            //throw new InvalidOperationException("No item available in the queue.");
+            //return default;
+            throw new InvalidOperationException("No item available in the queue.");
         }
 
         // Internal method to mark the channel as complete

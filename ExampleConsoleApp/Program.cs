@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using LAV.EventBus;
 
@@ -69,6 +70,7 @@ internal class Program
 {
     private static async Task Main(string[] args)
     {
+        long cnt = 0;
         DateTimeOffset start = DateTimeOffset.UtcNow;
 
         using (var fastEventBus = new FastEventBus())
@@ -93,7 +95,7 @@ internal class Program
             // Subscribe to OrderPlacedEvent
             _ = fastEventBus.SubscribeAsync<OrderPlacedEvent>((orderPlacedEvent) =>
             {
-                Console.WriteLine($"Order placed #1: {orderPlacedEvent.OrderId}");
+                Console.WriteLine($"{Interlocked.Increment(ref cnt)}Order placed #1: {orderPlacedEvent.OrderId}");
             });
 
             // Weak reference subscription with filter
@@ -187,7 +189,10 @@ internal class Program
             //     return Task.CompletedTask;
             // });
 
-            await fastEventBus.PublishAsync(new OrderPlacedEvent { OrderId = 789 });
+            for (int i = 0; i < 1000; i++)
+            {
+                fastEventBus.PublishAsync(new OrderPlacedEvent { OrderId = 789 });
+            }
 
             // Give some time for the events to be processed
             await Task.Delay(1000);

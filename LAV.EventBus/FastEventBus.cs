@@ -253,7 +253,7 @@ namespace LAV.EventBus
             }
             finally
             {
-                if(!disposedValue)
+                if(!disposedValue && _processSemaphore.CurrentCount > 0)
                     _processSemaphore?.Release();
             }
         }

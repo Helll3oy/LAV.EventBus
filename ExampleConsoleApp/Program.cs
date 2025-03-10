@@ -73,67 +73,67 @@ internal class Program
     private static async Task Main(string[] args)
     {
         //var summary = BenchmarkRunner.Run<Benchmarks>();
-        long cnt = 1000;
+        int cnt = 10000;
         DateTimeOffset start = DateTimeOffset.UtcNow;
-        //await FastEventBusExamples(cnt);
-        //Console.WriteLine($"Done [{(DateTimeOffset.UtcNow - start).TotalMilliseconds} мс]!");
+        
+        var res1 = await FastEventBusExamples(cnt);
+        var dur1 = DateTimeOffset.UtcNow - start;
 
         start = DateTimeOffset.UtcNow;
-        await EventBusExamples(cnt);
-        Console.WriteLine($"Done [{(DateTimeOffset.UtcNow - start).TotalMilliseconds} мс]!");
+        var res2 = await EventBusExamples(cnt);
+        var dur2 = DateTimeOffset.UtcNow - start;
+
+        Console.WriteLine("=========================================================================");
+        Console.WriteLine($"Result 1: {res1} [{dur1.TotalMilliseconds} мс]!");
+        Console.WriteLine($"Result 2: {res2} [{dur2.TotalMilliseconds} мс]!");
 
         Console.ReadLine();
     }
 
-    private static async Task EventBusExamples(long cnt)
+    private static async Task<long> EventBusExamples(int cnt)
     {
-        long test2 = 0;
-        long test3 = 0;
-        long test4 = 0;
+        long orderCnt = 0;
+        long userCnt = 0;
 
         using (var eventBus = new EventBus())
         {
             eventBus.Subscribe<OrderPlacedEvent>(async (orderPlacedEvent, ct) =>
             {
-                long i = Interlocked.Increment(ref test2);
+                long i = Interlocked.Increment(ref orderCnt);
 
-                Console.WriteLine($"{i,10}. Order placed 1 [{orderPlacedEvent.OrderId}]");
+                Console.WriteLine($"2. Order placed 1 [{orderPlacedEvent.OrderId}]");
 
-                await Task.Delay(10);
+                await Task.Delay(0, ct);
             },
             options: new HandlerOptions
             {
-                Mode = ExecutionMode.Sequential
+                Mode = ExecutionMode.Parallel
             },
             priority: EventHandlerPriority.Medium);
 
-            eventBus.Subscribe<UserCreatedEvent>(async (userCreatedEvent, ct) =>
-            {
-                long i = Interlocked.Increment(ref test3);
+            //eventBus.Subscribe<UserCreatedEvent>(async (userCreatedEvent, ct) =>
+            //{
+            //    long i = Interlocked.Increment(ref userCnt);
+            //    Console.WriteLine($"UserCreatedEvent [{userCreatedEvent.UserName}]");
+            //    await Task.Delay(0, ct);
+            //},
+            //options: new HandlerOptions
+            //{
+            //    Mode = ExecutionMode.Parallel
+            //},
+            //priority: EventHandlerPriority.VeryLow);
 
-                Console.WriteLine($"{i,10}. UserCreatedEvent [{userCreatedEvent.UserName}]");
-
-                await Task.Delay(10);
-            },
-            options: new HandlerOptions
-            {
-                Mode = ExecutionMode.Sequential
-            },
-            priority: EventHandlerPriority.VeryLow);
-
-            eventBus.Subscribe<OrderPlacedEvent>(async (orderPlacedEvent, ct) =>
-            {
-                long i = Interlocked.Increment(ref test4);
-
-                Console.WriteLine($"{i,10}. Order placed 3 [{orderPlacedEvent.OrderId}]");
-
-                await Task.Delay(10);
-            },
-            options: new HandlerOptions
-            {
-                Mode = ExecutionMode.Sequential
-            },
-            priority: EventHandlerPriority.VeryHigh);
+            //eventBus.Subscribe<OrderPlacedEvent>(async (orderPlacedEvent, ct) =>
+            //{
+            //    long i = Interlocked.Increment(ref orderCnt);
+            //    Console.WriteLine($"Order placed 2 [{orderPlacedEvent.OrderId}]");
+            //    await Task.Delay(0, ct);
+            //},
+            //options: new HandlerOptions
+            //{
+            //    Mode = ExecutionMode.Parallel
+            //},
+            //priority: EventHandlerPriority.VeryHigh);
 
 
             ////List<Task> tasks = new List<Task>();
@@ -148,18 +148,19 @@ internal class Program
             ////await Task.Delay(5000);
 
             // Publish events
-            Parallel.For(0, 1000, i =>
+            Parallel.For(0, cnt, i =>
             {
                 eventBus.Publish(new OrderPlacedEvent { OrderId = i });
-                eventBus.Publish(new UserCreatedEvent { UserName = $"UserName #{i * 10}" });
+                //eventBus.Publish(new UserCreatedEvent { UserName = $"UserName #{i}" });
             });
 
             await eventBus.WaitAllEventsCompleted();
-            Console.WriteLine("All events processed.");
+            //Console.WriteLine("All events processed.");
 
-            Console.WriteLine(Interlocked.Read(ref test2));
+            //Console.WriteLine($"OrderCnt: {Interlocked.Read(ref orderCnt)}");
+            //Console.WriteLine($"UserCnt: {Interlocked.Read(ref userCnt)}");
 
-            return;
+            return Interlocked.Read(ref orderCnt);
 
             ////eventBus.OnError += (sender, a) =>
             ////    Console.WriteLine($"Error: {a.Exception.Message}");
@@ -291,7 +292,7 @@ internal class Program
         }
     }
 
-    private static async Task FastEventBusExamples(long cnt)
+    private static async Task<long> FastEventBusExamples(long cnt)
     {
         long test1 = 0;
         using (var fastEventBus = new FastEventBus())
@@ -300,7 +301,7 @@ internal class Program
             {
                 Interlocked.Increment(ref test1);
                 
-                Console.WriteLine($"Order placed 1 [{orderPlacedEvent.OrderId}]");
+                Console.WriteLine($"1. Order placed 1 [{orderPlacedEvent.OrderId}]");
 
                 await Task.Delay(0);
             }));
@@ -319,11 +320,9 @@ internal class Program
 
             await processingTask;
 
-            await Task.Delay(1000);
+            await Task.Delay(100);
 
-            Console.WriteLine(Interlocked.Read(ref test1));
-
-            return;
+            return Interlocked.Read(ref test1);
 
             ////fastEventBus.OnError += (sender, a) =>
             ////    Console.WriteLine($"Error: {a.Exception.Message}");

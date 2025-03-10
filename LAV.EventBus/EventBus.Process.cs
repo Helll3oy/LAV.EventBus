@@ -80,7 +80,7 @@ namespace LAV.EventBus
             };
 
             int maxBatchSize = Options.BatchSize;
-            var processedTypes = new HashSet<Type>();
+            var typesToProcess = new HashSet<Type>();
 
             while (!token.IsCancellationRequested)
             {
@@ -90,39 +90,45 @@ namespace LAV.EventBus
                 while (_pendingEventTypes.TryDequeue(out var eventType))
                 {
                     _pendingTypes.TryRemove(eventType, out _);
-                    processedTypes.Add(eventType);
+                    typesToProcess.Add(eventType);
                 }
 
                 // Process each type's events in parallel
 #if NET6_0
-                await Parallel.ForEachAsync(processedTypes, parallelOptions, async (eventType, ct) =>
+                await Parallel.ForEachAsync(typesToProcess, parallelOptions, async (eventType, ct) =>
 #else
-                await ParallelExtensions.ForEachAsync(processedTypes, parallelOptions, async (eventType, ct) =>
+                await typesToProcess.ForEachAsync(parallelOptions, async (eventType, ct) =>
 #endif
                 {
                     if (!_eventStates.TryGetValue(eventType, out var state)) return;
 
+                    var remainingEvents = 0;
                     var batch = new List<EventInvocation>(maxBatchSize);
-                    while (state.EventQueue.TryDequeue(out var eventData) && batch.Count < maxBatchSize)
+                    while (state.EventQueue.TryDequeue(out var eventData))
                     {
                         batch.Add(eventData);
+
+                        if (!(batch.Count < maxBatchSize && state.EventQueue.Count >= maxBatchSize))
+                        {
+                            var handlers = state.CachedHandlers;
+
+                            await ProcessBatch(eventType, batch, handlers, ct);
+
+                            remainingEvents = Interlocked.Add(ref _activeEventCount, -batch.Count);
+
+                            batch.Clear();
+                        }
                     }
 
-                    if (batch.Count == 0) return;
-
-                    var handlers = state.CachedHandlers;
-
-                    await ProcessBatch(eventType, batch, handlers, ct);
-
-                    // Decrement active event count and signal completion if necessary
-                    var remainingEvents = Interlocked.Add(ref _activeEventCount, -batch.Count);
-                    if (remainingEvents == 0)
+                    if (remainingEvents <= 0)
                     {
                         _completionSignal.Release();
                     }
+                    //else
+                    //{
+                    //    throw new InvalidOperationException(nameof(remainingEvents));
+                    //}
                 });
-
-                processedTypes.Clear();
             }
         }
 
@@ -137,7 +143,7 @@ namespace LAV.EventBus
 #if NET6_0
                 await Parallel.ForEachAsync(batch, ct, async (data, innerCt) =>
 #else
-                await ParallelExtensions.ForEachAsync(batch, ct, async (data, innerCt) =>
+                await batch.ForEachAsync(ct, async (data, innerCt) =>
 #endif
                 {
                     await ProcessEvent(eventType, data, handlers, innerCt);
@@ -169,7 +175,7 @@ namespace LAV.EventBus
                 await ExecuteHandler(handler, eventInvocation, ct);
             }
 #else
-            await ParallelExtensions.ForEachAsync(handlers, ct, async (handler, innerCt) =>
+            await handlers.ForEachAsync(ct, async (handler, innerCt) =>
             {
                 await ExecuteHandler(handler, eventInvocation, innerCt);
             });

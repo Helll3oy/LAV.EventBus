@@ -58,12 +58,12 @@ namespace LAV.EventBus
         /// <summary>
         /// Maximum number of queued events before applying backpressure (default: 10,000)
         /// </summary>
-        public int MaxQueueSize { get; set; } = 10_000;
+        public int MaxQueueSize { get; set; } = 100000;
 
         /// <summary>
         /// Strategy when max queue size is reached (default: Block)
         /// </summary>
-        public QueueFullStrategy QueueFullStrategy { get; set; } = QueueFullStrategy.Block;
+        public QueueFullStrategy QueueFullStrategy { get; set; } = QueueFullStrategy.DropNew;
 
         /// <summary>
         /// Default handler execution mode (default: Parallel)
@@ -100,6 +100,7 @@ namespace LAV.EventBus
         public static EventBusOptions Default => new EventBusOptions
         {
             BatchSize = 200,
+            //MaxDegreeOfParallelism = 1,
             DefaultHandlerTimeout = TimeSpan.FromSeconds(30),
             QueueFullStrategy = QueueFullStrategy.DropNew,
             GlobalErrorHandler = ex =>

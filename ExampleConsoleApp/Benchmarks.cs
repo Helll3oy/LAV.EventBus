@@ -15,7 +15,6 @@ namespace ExampleConsoleApp
     [SimpleJob(RunStrategy.ColdStart, launchCount: 50)]
     public class Benchmarks
     {
-        private FastEventBus _fastEV;
         private EventBus _EV;
 
         private List<int> _data;
@@ -25,15 +24,6 @@ namespace ExampleConsoleApp
         public void Setup()
         {
             _data = Enumerable.Range(0, DataSize).ToList();
-
-            _fastEV = new FastEventBus();
-            //Task.WaitAll(_fastEV.SubscribeAsync<OrderPlacedEvent>(async (orderPlacedEvent) =>
-            //{
-            //    await Task.Delay(1);
-            //    //Console.WriteLine($"Order placed #1 [{orderPlacedEvent.OrderId}]");
-            //}));
-
-            Task.WaitAll(_fastEV.SubscribeAsync<OrderPlacedEvent>(HandlerAsync));
 
             _EV = new EventBus();
 
@@ -78,14 +68,6 @@ namespace ExampleConsoleApp
         //    }
         //}
 
-        [Benchmark]
-        public void FastEventBus_Publish()
-        {
-            foreach (var item in _data)
-            {
-                _fastEV.Publish(new OrderPlacedEvent { OrderId = item });
-            }
-        }
         [Benchmark]
         public void EventBus_Publish()
         {

@@ -1,17 +1,34 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Text;
 using System.Threading.Tasks;
 using System.Threading;
-using static Microsoft.IO.RecyclableMemoryStreamManager;
-using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
-namespace LAV.EventBus.Compatibility
-{
-#if !NET6_0
+namespace LAV.EventBus.Helpers
+{ 
     internal static class ParallelExtensions
     {
+#if NET6_0_OR_GREATER
+        public static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(this IEnumerable<T> source, 
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            var reader = source.GetEnumerator();
+            while (reader.MoveNext())
+            {
+                yield return reader.Current;
+            }
+        }
+
+        public static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(this IReadOnlyList<T> source,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            for (int i = 0; i < source.Count; i++)
+            {
+                yield return source[i];
+            }
+        }
+#else
         /// <summary>
         /// Выполняет асинхронную обработку элементов с ограничением параллелизма.
         /// </summary>
@@ -69,7 +86,7 @@ namespace LAV.EventBus.Compatibility
             ParallelOptions options,
             Func<T, CancellationToken, Task> body)
         {
-            await ForEachAsync(source, body, options.MaxDegreeOfParallelism, options.CancellationToken);
+            await source.ForEachAsync(body, options.MaxDegreeOfParallelism, options.CancellationToken);
         }
 
         public static async Task ForEachAsync<T>(
@@ -77,63 +94,12 @@ namespace LAV.EventBus.Compatibility
             CancellationToken token,
             Func<T, CancellationToken, Task> body)
         {
-            await ForEachAsync(source, body, Environment.ProcessorCount, token);
+            await source.ForEachAsync(body, Environment.ProcessorCount, token);
         }
-
-        //public static async Task ForEachAsync<T>(
-        //    IEnumerable<T> source,
-        //    CancellationToken token,
-        //    Func<T, CancellationToken, Task> body)
-        //{
-        //    await ForEachAsync(source, new ParallelOptions
-        //    {
-        //        CancellationToken = token,
-        //    },
-        //    body);
-        //}
-        //public static async Task ForEachAsync<T>(
-        //    IEnumerable<T> source,
-        //    ParallelOptions options,
-        //    Func<T, CancellationToken, Task> body)
-        //{
-        //    // Use a semaphore to limit the degree of parallelism
-        //    var semaphore = new SemaphoreSlim(options.MaxDegreeOfParallelism);
-
-        //    // Create a list of tasks to track all running tasks
-        //    var tasks = new List<Task>();
-
-        //    foreach (var item in source)
-        //    {
-        //        // Wait for the semaphore to allow a new task to start
-        //        await semaphore.WaitAsync(options.CancellationToken);
-
-        //        //// Start a new task for the current item
-        //        //var task = Task.Run(async () =>
-        //        //{
-        //        //    try
-        //        //    {
-        //        //        await body(item, options.CancellationToken);
-        //        //    }
-        //        //    finally
-        //        //    {
-        //        //        // Release the semaphore when the task is done
-        //        //        semaphore.Release();
-        //        //    }
-        //        //});
-
-        //        var task = body(item, options.CancellationToken)
-        //            .ContinueWith(t => semaphore.Release(), options.CancellationToken);
-
-        //        tasks.Add(task);
-        //    }
-
-        //    // Wait for all tasks to complete
-        //    await Task.WhenAll(tasks);
-        //}
-    }
 #endif
+    }
 
-#if !(NETCOREAPP2_1 || NETSTANDARD2_1)
+#if !(NETCOREAPP2_1 || NETSTANDARD2_1 || NET5_0_OR_GREATER)
     public static class ArrayPool<T>
     {
         private static readonly ConcurrentBag<T[]> _pool = new ConcurrentBag<T[]>();
@@ -160,8 +126,4 @@ namespace LAV.EventBus.Compatibility
         }
     }
 #endif
-
-    internal class CompatibilityHelpers
-    {
-    }
 }

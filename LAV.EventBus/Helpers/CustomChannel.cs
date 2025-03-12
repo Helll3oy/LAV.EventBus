@@ -1,13 +1,14 @@
 ﻿using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace LAV.EventBus
+namespace LAV.EventBus.Helpers
 {
+#if NET5_0_OR_GREATER
+    internal class CustomChannel<T> : System.Threading.Channels.Channel<T>
+    { }
+#else
     internal class CustomChannel<T> : IDisposable
     {
         private readonly ConcurrentQueue<T> _queue = new ConcurrentQueue<T>();
@@ -227,4 +228,5 @@ namespace LAV.EventBus
             await _channel.CompleteAsync();
         }
     }
-}
+#endif
+    }

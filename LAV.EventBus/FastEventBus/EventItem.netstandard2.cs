@@ -8,12 +8,13 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using System.Threading.Channels;
+using LAV.EventBus.FastEventBus;
 
-
-namespace LAV.EventBus
+namespace LAV.EventBus.FastEventBus
 {
     public sealed partial class EventItem : EventItemBase
     {
+#if NETSTANDARD2_0_OR_GREATER
         private System.Threading.Channels.Channel<object> _channel
             = System.Threading.Channels.Channel.CreateUnbounded<object>();
 
@@ -50,5 +51,6 @@ namespace LAV.EventBus
         {
             _channel = System.Threading.Channels.Channel.CreateUnbounded<object>();
         }
+#endif
     }
 }

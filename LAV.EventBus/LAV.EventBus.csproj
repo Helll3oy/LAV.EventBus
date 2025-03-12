@@ -2,7 +2,8 @@
 
 	<PropertyGroup>
 		<!-- Target both .NET Standard 2.0 and .NET Framework 4.5.2 -->
-		<TargetFrameworks>netstandard2.0;net452</TargetFrameworks>
+		<TargetFramework>net9.0</TargetFramework>
+		<!--<TargetFrameworks>net9.0;netstandard2.0;net452</TargetFrameworks>-->
 		<OutputType>Library</OutputType>
 		<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
 		<LangVersion>latest</LangVersion>
@@ -25,10 +26,10 @@
 		<PackageReference Include="System.Threading.Tasks.Extensions" Version="4.5.4" />
 		<PackageReference Include="Microsoft.IO.RecyclableMemoryStream" Version="1.4.1" />
 		
-		<Compile Remove="EventItem.netstandard2.cs" />
+		<Compile Remove="FastEventBus/EventItem.netstandard2.cs" />
 	</ItemGroup>
 
-	<ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+	<ItemGroup Condition="('$(TargetFramework)' == 'netstandard2.0' and '$(TargetFramework)' != 'net9.0')">
 		<!--<PackageReference Include="ICSharpCode.Decompiler" Version="9.0.0.7889" />-->
 		<PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="9.0.2" />
 		<PackageReference Include="Microsoft.IO.RecyclableMemoryStream" Version="3.0.1" />
@@ -36,7 +37,7 @@
 		<PackageReference Include="System.Threading.Channels" Version="9.0.2" />
 		<PackageReference Include="System.Threading.Tasks.Extensions" Version="4.6.0" />
 
-		<Compile Remove="EventItem.net452.cs" />
+		<Compile Remove="FastEventBus/EventItem.net452.cs" />
 	</ItemGroup>
 
 	<!-- System.HashCode introduced in netcoreapp2.1, netstandard2.1 -->
@@ -44,9 +45,17 @@
 		<!-- Microsoft.Bcl.HashCode package targets netcoreapp2.0, netstandard2.0, net461 -->
 		<PackageReference Include="Microsoft.Bcl.HashCode" Version="6.0.0" />
 	</ItemGroup>
+	<ItemGroup>
+	  <Compile Remove="FastEventBus\**" />
+	  <Compile Remove="SimpleEventBus\**" />
+	  <EmbeddedResource Remove="FastEventBus\**" />
+	  <EmbeddedResource Remove="SimpleEventBus\**" />
+	  <None Remove="FastEventBus\**" />
+	  <None Remove="SimpleEventBus\**" />
+	</ItemGroup>
 
 	<ItemGroup>
-		<Compile Remove="AsyncEnumerator.cs" />
+		<Compile Remove="Helpers/AsyncEnumerator.cs" />
 	</ItemGroup>
 
 	<!-- Shared dependencies for both frameworks 

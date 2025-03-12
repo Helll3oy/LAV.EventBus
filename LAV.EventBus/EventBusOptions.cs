@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
-using Microsoft.IO;
 using System.Threading;
 
 namespace LAV.EventBus
@@ -51,11 +50,6 @@ namespace LAV.EventBus
         public Action<Exception> GlobalErrorHandler { get; set; }
 
         /// <summary>
-        /// Memory stream manager for event data serialization
-        /// </summary>
-        public RecyclableMemoryStreamManager MemoryStreamManager { get; set; } = new();
-
-        /// <summary>
         /// Maximum number of queued events before applying backpressure (default: 10,000)
         /// </summary>
         public int MaxQueueSize { get; set; } = 100000;
@@ -73,17 +67,25 @@ namespace LAV.EventBus
         /// <summary>
         /// Enable performance metrics collection (default: false)
         /// </summary>
+#if NET5_0_OR_GREATER
         public bool EnableMetrics { get; set; } = false;
-
-        /// <summary>
-        /// Default priority for handlers without explicit priority (default: EventHandlerPriority.VeryLow)
-        /// </summary>
-        public int DefaultHandlerPriority { get; set; } = (int)EventHandlerPriority.VeryLow;
 
         /// <summary>
         /// Interval for metrics sampling (default: 1 minute)
         /// </summary>
         public TimeSpan MetricsSampleInterval { get; set; } = TimeSpan.FromMinutes(1);
+#else
+        public bool EnableMetrics { get; } = false;
+
+        /// <summary>
+        /// Interval for metrics sampling (default: 1 minute)
+        /// </summary>
+        public TimeSpan MetricsSampleInterval { get; } = TimeSpan.FromMinutes(1);
+#endif
+        /// <summary>
+        /// Default priority for handlers without explicit priority (default: EventHandlerPriority.VeryLow)
+        /// </summary>
+        public int DefaultHandlerPriority { get; set; } = (int)EventHandlerPriority.VeryLow;
 
         public void Validate()
         {
@@ -99,10 +101,10 @@ namespace LAV.EventBus
 
         public static EventBusOptions Default => new EventBusOptions
         {
-            BatchSize = 200,
+            BatchSize = 300,
             //MaxDegreeOfParallelism = 1,
-            DefaultHandlerTimeout = TimeSpan.FromSeconds(30),
-            QueueFullStrategy = QueueFullStrategy.DropNew,
+            DefaultHandlerTimeout = TimeSpan.FromMinutes(1),
+            QueueFullStrategy = QueueFullStrategy.Block,
             GlobalErrorHandler = ex =>
                 Console.WriteLine($"Event bus error: {ex}"),
         };

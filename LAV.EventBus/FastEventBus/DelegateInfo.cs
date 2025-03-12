@@ -4,7 +4,8 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.ComponentModel;
 
-namespace LAV.EventBus
+
+namespace LAV.EventBus.FastEventBus
 {
     /// <summary>
     /// Represents an abstract base class for delegate information.

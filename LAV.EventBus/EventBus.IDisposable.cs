@@ -1,15 +1,5 @@
 ﻿using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.Linq;
-using System.Net.Sockets;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Xml.Linq;
 
 namespace LAV.EventBus
 {
@@ -27,48 +17,57 @@ namespace LAV.EventBus
         private void Dispose(bool disposing)
         {
             if (disposedValue) return;
+            disposedValue = true;
 
             _cts?.Cancel();
             _signal?.Release();
-            _cts?.Dispose();
-            _signal?.Dispose();
-            _completionSignal?.Dispose();
-
-            disposedValue = true;
+            _completionSignal?.Release();
 
             if (disposing)
             {
-                // Clear all handlers
-                foreach (var eventHandlers in _handlers.Select(s => s.Value))
+
+#if NETSTANDARD2_0_OR_GREATER || NET5_0_OR_GREATER
+                foreach (var state in _eventStates.Values)
                 {
-                    eventHandlers.Lock.EnterUpgradeableReadLock();
-                    try
-                    {
-                        int groupedHandlersCount = eventHandlers.Handlers.Count;
-                        for (var i = groupedHandlersCount - 1; i >= 0; i--)
-                        {
-                            var handlers = eventHandlers.Handlers.ElementAt(i).Value;
-
-                            int handlersCount = handlers.Count;
-                            for (var j = handlersCount - 1; j >= 0; j--)
-                            {
-                                var handler = handlers[j];
-                                handler.Token.Dispose();
-                            }
-                        }
-
-                        eventHandlers.Handlers.Clear();
-                    }
-                    finally
-                    {
-                        eventHandlers.Lock.ExitUpgradeableReadLock();
-                    }
-
-                    eventHandlers.Handlers.Clear();
+                    state.Storage.Writer.Complete();
                 }
+#endif
 
-                _handlers.Clear();
+                //// Clear all handlers
+                //foreach (var eventHandlers in _handlers.Select(s => s.Value))
+                //{
+                //    eventHandlers.Lock.EnterUpgradeableReadLock();
+                //    try
+                //    {
+                //        int groupedHandlersCount = eventHandlers.Handlers.Count;
+                //        for (var i = groupedHandlersCount - 1; i >= 0; i--)
+                //        {
+                //            var handlers = eventHandlers.Handlers.ElementAt(i).Value;
+
+                //            int handlersCount = handlers.Count;
+                //            for (var j = handlersCount - 1; j >= 0; j--)
+                //            {
+                //                var handler = handlers[j];
+                //                handler.Token.Dispose();
+                //            }
+                //        }
+
+                //        eventHandlers.Handlers.Clear();
+                //    }
+                //    finally
+                //    {
+                //        eventHandlers.Lock.ExitUpgradeableReadLock();
+                //    }
+
+                //    eventHandlers.Handlers.Clear();
+                //}
+
+                //_handlers.Clear();
             }
+
+            _cts?.Dispose();
+            _signal?.Dispose();
+            _completionSignal?.Dispose();
         }
 
         ~EventBus()

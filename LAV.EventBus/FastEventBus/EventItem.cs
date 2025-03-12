@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 using System.Threading.Channels;
 #endif
 
-namespace LAV.EventBus
+namespace LAV.EventBus.FastEventBus
 {
     public sealed partial class EventItem : EventItemBase
     {

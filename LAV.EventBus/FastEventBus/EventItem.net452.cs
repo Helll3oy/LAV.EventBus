@@ -6,8 +6,9 @@ using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
+using LAV.EventBus.Helpers;
 
-namespace LAV.EventBus
+namespace LAV.EventBus.FastEventBus
 {
     public sealed partial class EventItem
     {

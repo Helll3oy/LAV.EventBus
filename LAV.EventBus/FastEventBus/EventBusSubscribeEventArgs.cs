@@ -1,6 +1,6 @@
 using System;
 
-namespace LAV.EventBus
+namespace LAV.EventBus.FastEventBus
 {
     public sealed class EventBusSubscribeEventArgs : EventArgs
     {

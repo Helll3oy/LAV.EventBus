@@ -3,6 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 
+using LAV.EventBus.Helpers;
+
 namespace LAV.EventBus
 {
     public enum EventHandlerPriority
@@ -14,64 +16,8 @@ namespace LAV.EventBus
         VeryLow = byte.MaxValue
     }
 
-    internal interface IHandlerWrapper
-    {
-        Task<bool> HandleAsync(object eventData, CancellationToken token = default);
-    }
-
-#if !(NET6_0 || NETSTANDARD2_1)
-    public static class TaskExtensions
-    {
-        public static async Task WaitAsync(this Task task, TimeSpan timeout, CancellationToken cancellationToken = default)
-        {
-            // Create a Task that completes after the specified timeout
-            var timeoutTask = Task.Delay(timeout, cancellationToken);
-
-            // Use Task.WhenAny to wait for either the original task or the timeout task
-            var completedTask = await Task.WhenAny(task, timeoutTask);
-
-            if (completedTask == timeoutTask)
-            {
-                throw new TimeoutException("The operation has timed out.");
-            }
-
-            // Ensure the original task is completed (in case it threw an exception)
-            await task;
-        }
-    }
-#endif
-
     internal abstract class EventBusHandler : IEquatable<EventBusHandler>
     {
-#if !(NETCOREAPP2_1 || NETSTANDARD2_1)
-        public static Task<T> CreateCanceledTask<T>(CancellationToken cancellationToken = default)
-        {
-            var tcs = new TaskCompletionSource<T>();
-            tcs.SetCanceled(); // Mark the task as canceled
-            return tcs.Task;
-        }
-
-        public static Task CreateCanceledTask(CancellationToken cancellationToken = default)
-        {
-            var tcs = new TaskCompletionSource<byte>();
-            tcs.SetCanceled(); // Mark the task as canceled
-            return tcs.Task;
-        }
-
-        public static ValueTask<T> CreateCanceledValueTask<T>(CancellationToken cancellationToken = default)
-        {
-            // Create a canceled Task and wrap it in a ValueTask
-            var canceledTask = CreateCanceledTask<T>(cancellationToken);
-            return new ValueTask<T>(canceledTask);
-        }
-
-        public static ValueTask CreateCanceledValueTask(CancellationToken cancellationToken = default)
-        {
-            // Create a canceled Task and wrap it in a ValueTask
-            var canceledTask = CreateCanceledTask(cancellationToken);
-            return new ValueTask(canceledTask);
-        }
-#endif
         public int Priority { get; }
         public HandlerOptions Options { get; }
         public CircuitBreaker CircuitBreaker { get; }
@@ -117,15 +63,15 @@ namespace LAV.EventBus
 
         public override ValueTask HandleAsync(object eventData, CancellationToken cancellationToken = default)
         {
-#if NETCOREAPP2_1 || NETSTANDARD2_1
-            if (ct.IsCancellationRequested)
-                return ValueTask.FromCanceled(ct);
+#if NETCOREAPP2_1_OR_GREATER || NETSTANDARD2_1
+            if (cancellationToken.IsCancellationRequested)
+                return ValueTask.FromCanceled(cancellationToken);
 
             _handler((TEvent)eventData);
             return ValueTask.CompletedTask;
-#else 
+#else
             if (cancellationToken.IsCancellationRequested)
-                return CreateCanceledValueTask(cancellationToken);
+                return TaskHelpers.CreateCanceledValueTask(cancellationToken);
 
             _handler((TEvent)eventData);
             return default(ValueTask);
@@ -166,18 +112,18 @@ namespace LAV.EventBus
             _handler = handler ?? throw new ArgumentNullException(nameof(handler));
         }
 
-        public override ValueTask HandleAsync(object eventData, CancellationToken cancellationToken = default)
+        public override async ValueTask HandleAsync(object eventData, CancellationToken cancellationToken = default)
         {
-#if NETCOREAPP2_1 || NETSTANDARD2_1
-            if (ct.IsCancellationRequested)
-                return ValueTask.FromCanceled(ct);
-
-            return _handler((TEvent)eventData).WaitAsync(cancellationToken);
-#else 
+#if NETCOREAPP2_1_OR_GREATER || NETSTANDARD2_1 || NET6_0_OR_GREATER
             if (cancellationToken.IsCancellationRequested)
-                return CreateCanceledValueTask(cancellationToken);
+                await ValueTask.FromCanceled(cancellationToken);
 
-            return _handler((TEvent)eventData);
+            await _handler((TEvent)eventData);//.WaitAsync(cancellationToken);
+#else
+            if (cancellationToken.IsCancellationRequested)
+                await TaskHelpers.CreateCanceledValueTask(cancellationToken);
+
+            await _handler((TEvent)eventData);
 #endif
         }
 
@@ -206,16 +152,16 @@ namespace LAV.EventBus
             _handler = handler ?? throw new ArgumentNullException(nameof(handler));
         }
 
-        public override ValueTask HandleAsync(object eventData, CancellationToken cancellationToken = default)
+        public override async ValueTask HandleAsync(object eventData, CancellationToken cancellationToken = default)
         {
-#if NETCOREAPP2_1 || NETSTANDARD2_1
-            if (ct.IsCancellationRequested)
-                return ValueTask.FromCanceled(ct);
-
-            return new ValueTask(_handler((TEvent)eventData).WaitAsync(cancellationToken));
-#else 
+#if NETCOREAPP2_1_OR_GREATER || NETSTANDARD2_1
             if (cancellationToken.IsCancellationRequested)
-                return CreateCanceledValueTask(cancellationToken);
+                await ValueTask.FromCanceled(cancellationToken);
+
+            await _handler((TEvent)eventData).WaitAsync(cancellationToken).ConfigureAwait(false);
+#else
+            if (cancellationToken.IsCancellationRequested)
+                return TaskHelpers.CreateCanceledValueTask(cancellationToken);
 
             return new ValueTask(_handler((TEvent)eventData));
 #endif
@@ -246,9 +192,9 @@ namespace LAV.EventBus
             _handler = handler ?? throw new ArgumentNullException(nameof(handler));
         }
 
-        public override ValueTask HandleAsync(object eventData, CancellationToken cancellationToken = default)
+        public override async ValueTask HandleAsync(object eventData, CancellationToken cancellationToken = default)
         {
-            return _handler((TEvent)eventData, cancellationToken);
+            await _handler((TEvent)eventData, cancellationToken).ConfigureAwait(false);
         }
 
         public override bool Equals(object obj)
@@ -276,9 +222,9 @@ namespace LAV.EventBus
             _handler = handler ?? throw new ArgumentNullException(nameof(handler));
         }
 
-        public override ValueTask HandleAsync(object eventData, CancellationToken cancellationToken = default)
+        public override async ValueTask HandleAsync(object eventData, CancellationToken cancellationToken = default)
         {
-            return new ValueTask(_handler((TEvent)eventData, cancellationToken));
+            await new ValueTask(_handler((TEvent)eventData, cancellationToken)).ConfigureAwait(false);
         }
 
         public override bool Equals(object obj)

@@ -4,7 +4,7 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 
-namespace LAV.EventBus
+namespace LAV.EventBus.Helpers
 {
     public static class TypeHelpers
     {

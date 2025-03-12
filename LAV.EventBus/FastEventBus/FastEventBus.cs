@@ -9,7 +9,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Linq;
 
-namespace LAV.EventBus
+namespace LAV.EventBus.FastEventBus
 {
     /// <summary>
     /// Represents a fast event bus for managing event subscriptions and publications.

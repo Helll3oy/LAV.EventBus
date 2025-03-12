@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace LAV.EventBus
+namespace LAV.EventBus.FastEventBus
 {
     public abstract class EventItemBase : IDisposable
     {
@@ -182,7 +182,7 @@ namespace LAV.EventBus
                 if (eventHandlerInfo.HasFilter && !eventHandlerInfo.ApplyFilter(@event)) continue;
 
                 var eventHandler = iterator.Current.Key;
-                InvokeEventHandler<TEvent>(@event, eventHandler, cancellationToken);
+                InvokeEventHandler(@event, eventHandler, cancellationToken);
             }
 
             if (!_weakDelegateInfos.IsEmpty)
@@ -195,7 +195,7 @@ namespace LAV.EventBus
 
                         var eventHandler = weakDelegateInfo.CreateDelegate();
 
-                        InvokeEventHandler<TEvent>(@event, eventHandler, cancellationToken);
+                        InvokeEventHandler(@event, eventHandler, cancellationToken);
                     }
                     else
                     {
